@@ -216,6 +216,8 @@ typedef struct
 	POOL_HEADER_ELEMENT elements[1];	/* actual hash elements follows */
 } POOL_HASH_HEADER;
 
+extern POOL_QUERY_CACHE_STATS *stats;
+
 extern int pool_hash_init(int nelements);
 extern POOL_CACHEID *pool_hash_search(POOL_QUERY_HASH *key);
 extern int pool_hash_delete(POOL_QUERY_HASH *key);
@@ -229,11 +231,6 @@ extern bool pool_is_likely_select(char *query);
 extern bool pool_is_table_in_black_list(const char *table_name);
 extern bool pool_is_table_in_white_list(const char *table_name);
 extern bool pool_is_allow_to_cache(Node *node, char *query);
-extern int pool_extract_table_oids(Node *node, int **oidsp);
-extern void pool_add_dml_table_oid(int oid);
-extern void pool_discard_oid_maps(void);
-extern int pool_get_database_oid_from_dbname(char *dbname);
-extern void pool_discard_oid_maps_by_db(int dboid);
 extern bool pool_is_shmem_cache(void);
 extern size_t pool_shared_memory_cache_size(void);
 extern int pool_init_memory_cache(size_t size);
@@ -264,5 +261,34 @@ extern void pool_discard_temp_query_cache(POOL_TEMP_QUERY_CACHE *temp_cache);
 
 extern void pool_shmem_lock(void);
 extern void pool_shmem_unlock(void);
+extern int pool_delete_item_shmem_cache(POOL_CACHEID *cacheid);
+#ifdef USE_MEMCACHED
+extern int delete_cache_on_memcached(const char *key);
+#endif
+
+/* pool_oid_map.c */
+extern int pool_extract_table_oids(Node *node, int **oidsp);
+extern int pool_get_dml_table_oid(int **oid);
+extern int pool_get_dropdb_table_oids(int **oids, int dboid);
+extern void pool_discard_dml_table_oid(void);
+extern void pool_invalidate_query_cache(int num_table_oids, int *table_oid, bool unlink, int dboid);
+extern void pool_add_table_oid_map(POOL_CACHEKEY *cachkey, int num_table_oids, int *table_oids);
+extern void pool_add_dml_table_oid(int oid);
+extern void pool_discard_oid_maps(void);
+extern int pool_get_database_oid_from_dbname(char *dbname);
+extern void pool_discard_oid_maps_by_db(int dboid);
+
+/* pool_shmem.c */
+extern POOL_CACHEID *pool_add_item_shmem_cache(POOL_QUERY_HASH *query_hash, char *data, int size);
+extern char *pool_get_item_shmem_cache(POOL_QUERY_HASH *query_hash, int *size, int *sts);
+
+/* pool_internal_buffer.c */
+extern void pool_reset_memqcache_buffer(void);
+extern POOL_QUERY_CACHE_ARRAY * pool_add_query_cache_array(POOL_QUERY_CACHE_ARRAY *cache_array, POOL_TEMP_QUERY_CACHE *cache);
+extern void pool_add_temp_query_cache(POOL_TEMP_QUERY_CACHE *temp_cache, char kind, char *data, int data_len);
+extern void pool_add_oids_temp_query_cache(POOL_TEMP_QUERY_CACHE *temp_cache, int num_oids, int *oids);
+extern char *pool_get_current_cache_buffer(size_t *len);
+extern void pool_check_and_discard_cache_buffer(int num_oids, int *oids);
+extern void *pool_get_buffer(POOL_INTERNAL_BUFFER *buffer, size_t *len);
 
 #endif /* POOL_MEMQCACHE_H */

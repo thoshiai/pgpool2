@@ -23,6 +23,9 @@ pgpool_SOURCES = main/main.c \
 	protocol/pool_connection_pool.c \
 	protocol/pool_proto_modules.c \
 	query_cache/pool_memqcache.c \
+	query_cache/pool_oid_map.c \
+	query_cache/pool_shmem.c \
+	query_cache/pool_internal_buffer.c \
 	protocol/CommandComplete.c \
 	context/pool_session_context.c \
 	context/pool_process_context.c \

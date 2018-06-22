@@ -122,6 +122,9 @@ am_pgpool_OBJECTS = main/main.$(OBJEXT) main/pool_globals.$(OBJEXT) \
 	protocol/pool_connection_pool.$(OBJEXT) \
 	protocol/pool_proto_modules.$(OBJEXT) \
 	query_cache/pool_memqcache.$(OBJEXT) \
+	query_cache/pool_oid_map.$(OBJEXT) \
+	query_cache/pool_shmem.$(OBJEXT) \
+	query_cache/pool_internal_buffer.$(OBJEXT) \
 	protocol/CommandComplete.$(OBJEXT) \
 	context/pool_session_context.$(OBJEXT) \
 	context/pool_process_context.$(OBJEXT) \
@@ -455,6 +458,9 @@ pgpool_SOURCES = main/main.c \
 	protocol/pool_connection_pool.c \
 	protocol/pool_proto_modules.c \
 	query_cache/pool_memqcache.c \
+	query_cache/pool_oid_map.c \
+	query_cache/pool_shmem.c \
+	query_cache/pool_internal_buffer.c \
 	protocol/CommandComplete.c \
 	context/pool_session_context.c \
 	context/pool_process_context.c \
@@ -689,6 +695,10 @@ query_cache/$(am__dirstamp):
 	@$(MKDIR_P) query_cache
 	@: > query_cache/$(am__dirstamp)
 query_cache/pool_memqcache.$(OBJEXT): query_cache/$(am__dirstamp)
+query_cache/pool_oid_map.$(OBJEXT): query_cache/$(am__dirstamp)
+query_cache/pool_shmem.$(OBJEXT): query_cache/$(am__dirstamp)
+query_cache/pool_internal_buffer.$(OBJEXT):  \
+	query_cache/$(am__dirstamp)
 protocol/CommandComplete.$(OBJEXT): protocol/$(am__dirstamp)
 context/$(am__dirstamp):
 	@$(MKDIR_P) context
