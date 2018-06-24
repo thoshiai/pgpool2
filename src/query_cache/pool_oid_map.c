@@ -52,6 +52,7 @@
 #include "utils/elog.h"
 #include "utils/palloc.h"
 #include "utils/memutils.h"
+#include "libmemcached/memcached.h"
 
 extern int pool_get_dml_table_oid(int **oid);
 extern int pool_get_dropdb_table_oids(int **oids, int dboid);
@@ -62,6 +63,10 @@ extern void pool_add_table_oid_map(POOL_CACHEKEY *cachkey, int num_table_oids, i
 
 #define POOL_OIDBUF_SIZE 1024
 #define DATABASE_TO_OID_QUERY "SELECT oid FROM pg_database WHERE datname = '%s'"
+
+#ifdef USE_MEMCACHED
+extern memcached_st *memc;
+#endif
 
 static int* oidbuf;
 static int oidbufp;
@@ -268,6 +273,11 @@ int pool_get_dml_table_oid(int **oid)
 	return oidbufp;
 }
 
+/*
+ * Extract all table oids for specified dboid from oid table.
+ * oids: pointer to a palloc'ed oid array
+ * size of the array is returned from the function.
+ */
 int pool_get_dropdb_table_oids(int **oids, int dboid)
 {
 	int *rtn = 0;
@@ -592,6 +602,9 @@ void pool_discard_oid_maps(void)
 
 }
 
+/*
+ * Discard oid map files by dboid
+ */
 void pool_discard_oid_maps_by_db(int dboid)
 {
 	char command[1024];
@@ -775,3 +788,37 @@ void pool_invalidate_query_cache(int num_table_oids, int *table_oid, bool unlink
 	dump_shmem_cache(0);
 #endif
 }
+
+#ifdef USE_MEMCACHED
+/*
+ * Aquire lock on memcached by using memcached_add.
+ */
+void lock_memcached(void)
+{
+#define MEMCACHED_LOCK_EXPIRATION	10
+#define MY_LOCK_KEY	"pgpool_my_lock_key"
+#define MY_LOCK_KEY_SIZE	sizeof(MY_LOCK_KEY)
+#define MY_LOCK_DATA	"pgpool_memq_cache"
+#define MY_LOCK_DATA_LEN	sizeof(MY_LOCK_DATA)
+#define	MY_SLEEP_TIME	100*1000*1000	/* 100 mili seconds */
+
+	memcached_return rc;
+
+	do
+	{
+		rc = memcached_set(memc, MY_LOCK_KEY, MY_LOCK_KEY_SIZE,
+						   MY_LOCK_DATA, MY_LOCK_DATA_LEN, (time_t)MEMCACHED_LOCK_EXPIRATION, 0);
+		usleep(MY_SLEEP_TIME);
+	}
+	while (rc != MEMCACHED_SUCCESS);
+}
+
+/*
+ * Release lock on memcached by using memcached_add.
+ */
+void unlock_memcached(void)
+{
+	memcached_delete(memc, MY_LOCK_KEY, MY_LOCK_KEY_SIZE, 0);
+}
+
+#endif

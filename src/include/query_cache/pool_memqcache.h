@@ -6,7 +6,7 @@
  * pgpool: a language independent connection pool server for PostgreSQL 
  * written by Tatsuo Ishii
  *
- * Copyright (c) 2003-2012	PgPool Global Development Group
+ * Copyright (c) 2003-2018	PgPool Global Development Group
  *
  * Permission to use, copy, modify, and distribute this software and
  * its documentation for any purpose and without fee is hereby
@@ -277,6 +277,10 @@ extern void pool_add_dml_table_oid(int oid);
 extern void pool_discard_oid_maps(void);
 extern int pool_get_database_oid_from_dbname(char *dbname);
 extern void pool_discard_oid_maps_by_db(int dboid);
+#ifdef USE_MEMCACHED
+extern void lock_memcached(void);
+extern void unlock_memcached(void);
+#endif
 
 /* pool_shmem.c */
 extern POOL_CACHEID *pool_add_item_shmem_cache(POOL_QUERY_HASH *query_hash, char *data, int size);
