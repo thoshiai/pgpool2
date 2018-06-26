@@ -52,19 +52,17 @@
 #include "utils/elog.h"
 #include "utils/palloc.h"
 #include "utils/memutils.h"
-#include "libmemcached/memcached.h"
 
-extern int pool_get_dml_table_oid(int **oid);
-extern int pool_get_dropdb_table_oids(int **oids, int dboid);
-extern void pool_discard_dml_table_oid(void);
-extern void pool_invalidate_query_cache(int num_table_oids, int *table_oid, bool unlink, int dboid);
 static int pool_get_database_oid(void);
 static void pool_add_table_oid_map_shmem(POOL_CACHEKEY *cachekey, int num_table_oids, int *table_oids);
 static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_table_oids, int *table_oids);
 static void pool_invalidate_query_cache_shmem(int num_table_oids, int *table_oid, bool unlinkp, int dboid);
 static void pool_invalidate_query_cache_memcached(int num_table_oids, int *table_oid, bool unlinkp, int dboid);
 static int delete_cache_on_memcached(const char *key);
-extern void pool_add_table_oid_map(POOL_CACHEKEY *cachkey, int num_table_oids, int *table_oids);
+static int pool_get_dropdb_table_oids_shmem(int **oids, int dboid);
+static int pool_get_dropdb_table_oids_memcached(int **oids, int dboid);
+static void pool_discard_oid_maps_by_db_shmem(int dboid);
+static void pool_discard_oid_maps_by_db_memcached(int dboid);
 
 #define POOL_OIDBUF_SIZE 1024
 #define DATABASE_TO_OID_QUERY "SELECT oid FROM pg_database WHERE datname = '%s'"
@@ -287,6 +285,17 @@ int pool_get_dml_table_oid(int **oid)
  */
 int pool_get_dropdb_table_oids(int **oids, int dboid)
 {
+	int sts;
+
+	if (pool_is_shmem_cache())
+		sts = pool_get_dropdb_table_oids_shmem(oids, dboid);
+	else
+		sts = pool_get_dropdb_table_oids_memcached(oids, dboid);
+	return sts;
+}
+
+static int pool_get_dropdb_table_oids_shmem(int **oids, int dboid)
+{
 	int *rtn = 0;
 	int oids_size = 0;
 	int *tmp;
@@ -330,6 +339,53 @@ int pool_get_dropdb_table_oids(int **oids, int dboid)
 	*oids = rtn;
 
 	return num_oids;
+}
+
+static int pool_get_dropdb_table_oids_memcached(int **oids, int dboid)
+{
+#ifdef USE_MEMCACHED
+	char db_oid_str[32];
+	int db_oid_str_len;
+	size_t len, len_save;
+	unsigned int flags;
+	memcached_return rc;
+	char *ptr, *ptr_save;
+	int *ret_oids, *ret_oids_save;
+
+	snprintf(db_oid_str, sizeof(db_oid_str), "%d", dboid);
+	db_oid_str_len = strlen(db_oid_str);
+	ptr_save = ptr = memcached_get(memc, db_oid_str, db_oid_str_len, &len, &flags, &rc);
+	if (ptr == NULL && rc != MEMCACHED_NOTFOUND)
+	{
+		ereport(WARNING,
+				(errmsg("pool_get_dropdb_table_oids_memcached: memcached_get returned error %s", memcached_error(memc))));
+		return 0;
+	}
+
+	if (rc == MEMCACHED_SUCCESS)
+	{
+		ret_oids_save = ret_oids = palloc(len/POOL_TABLE_OID_STR_LEN * sizeof(int));
+		len_save = len;
+		while (len > 0)
+		{
+			char buf[POOL_TABLE_OID_STR_LEN+1];
+			char *p;
+			int oid;
+
+			memcpy(buf, ptr, POOL_TABLE_OID_STR_LEN);
+			buf[POOL_TABLE_OID_STR_LEN] = '\0';
+			oid = strtol(buf, &p, 16);
+			memcpy(ret_oids, &oid, sizeof(oid));
+			ret_oids++;
+			ptr += POOL_TABLE_OID_STR_LEN;
+			len -= POOL_TABLE_OID_STR_LEN;
+		}
+		free(ptr_save);
+		*oids = ret_oids_save;
+		return len_save/POOL_TABLE_OID_STR_LEN;
+	}
+#endif
+	return 0;
 }
 
 /* Discard oid internal buffer */
@@ -603,8 +659,8 @@ static void pool_add_table_oid_map_shmem(POOL_CACHEKEY *cachekey, int num_table_
 }
 
 /*
- * Add query cache hash key to the table oid data in memcached.
- * Also this function creates maintain DB oid vs. table oids map.
+ * Add query cache hash keys to the table oid data in memcached.
+ * Also this function creates and maintains DB oid vs. table oids map.
  *
  * DB oid + table oid vs. query cache hash key format:
  * Key format: "DB oid (decimal string)" + "/" + "table oid (decimal string)"
@@ -632,8 +688,8 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 	unsigned int flags;
 	size_t len;
 	memcached_return rc;
-	char *data;
-	int wlen;
+	char *data = NULL;
+	int wlen = 0;
 	char buf[POOL_MD5_HASHKEYLEN+1];
 	char db_table_oid_key[POOL_DB_TABLE_OID_KEYLEN];
 	int db_table_oid_key_len;
@@ -800,6 +856,14 @@ void pool_discard_oid_maps(void)
  */
 void pool_discard_oid_maps_by_db(int dboid)
 {
+	if (pool_is_shmem_cache())
+		pool_discard_oid_maps_by_db_shmem(dboid);
+	else
+		pool_discard_oid_maps_by_db_memcached(dboid);
+}
+
+static void pool_discard_oid_maps_by_db_shmem(int dboid)
+{
 	char command[1024];
 
 	if (pool_is_shmem_cache())
@@ -816,6 +880,28 @@ void pool_discard_oid_maps_by_db(int dboid)
 				(errmsg("unable to execute command \"%s\"",command),
                      errdetail("system() command failed with error \"%s\"",strerror(errno))));
 	}
+}
+
+/*
+ * Remove dboid/table_oids data from memcached.  query cache data has already
+ * been removed pool_invalidate_query_cache().
+ */
+static void pool_discard_oid_maps_by_db_memcached(int dboid)
+{
+#ifdef USE_MEMCACHED
+	char db_oid_str[32];
+	int db_oid_str_len;
+	memcached_return rc;
+
+	snprintf(db_oid_str, sizeof(db_oid_str), "%d", dboid);
+	db_oid_str_len = strlen(db_oid_str);
+	rc = memcached_delete(memc, db_oid_str, db_oid_str_len, (time_t)0);
+    if (rc != MEMCACHED_SUCCESS && rc != MEMCACHED_BUFFERED)
+    {
+		ereport(WARNING,
+				(errmsg("failed to delete dboid/table_oids map on memcached, error:\"%s\"", memcached_strerror(memc, rc))));
+    }
+#endif
 }
 
 /*
@@ -993,7 +1079,6 @@ static void pool_invalidate_query_cache_shmem(int num_table_oids, int *table_oid
 static void pool_invalidate_query_cache_memcached(int num_table_oids, int *table_oid, bool unlinkp, int dboid)
 {
 #ifdef USE_MEMCACHED
-	int db_oid;
 	int i;
 	char *ptr, *ptr_save;
 	char db_table_oid_key[POOL_DB_TABLE_OID_KEYLEN];
@@ -1002,13 +1087,13 @@ static void pool_invalidate_query_cache_memcached(int num_table_oids, int *table
 	memcached_return rc;
 	uint32_t flags;
 
-	db_oid = pool_get_database_oid();
-
 	for (i=0;i<num_table_oids;i++)
 	{
-		snprintf(db_table_oid_key, POOL_DB_TABLE_OID_KEYLEN, "%d/%d", db_oid, table_oid[i]);
+		snprintf(db_table_oid_key, POOL_DB_TABLE_OID_KEYLEN, "%d/%d", dboid, table_oid[i]);
 		db_table_oid_key_len = strlen(db_table_oid_key);
+		elog(LOG, "pool_invalidate_query_cache_memcached: db_table_oid_key:=%s=", db_table_oid_key);
 		ptr_save = ptr = memcached_get(memc, db_table_oid_key, db_table_oid_key_len, &len, &flags, &rc);
+		elog(DEBUG5, "pool_invalidate_query_cache_memcached: rc:%d db_table_oid_key:=%s=", rc, db_table_oid_key);
 		if (ptr == NULL && rc != MEMCACHED_NOTFOUND)
 		{
 			ereport(WARNING,
@@ -1028,7 +1113,7 @@ static void pool_invalidate_query_cache_memcached(int num_table_oids, int *table
 			if (unlinkp)
 			{
 				/* delete the map data */
-				rc= memcached_delete(memc, db_table_oid_key, POOL_DB_TABLE_OID_KEYLEN, (time_t)0);
+				rc = memcached_delete(memc, db_table_oid_key, db_table_oid_key_len, (time_t)0);
 
 				if (rc != MEMCACHED_SUCCESS && rc != MEMCACHED_BUFFERED)
 				{
@@ -1042,12 +1127,12 @@ static void pool_invalidate_query_cache_memcached(int num_table_oids, int *table
 #endif
 }
 
-#ifdef USE_MEMCACHED
 /*
  * delete query cache on memcached
  */
 static int delete_cache_on_memcached(const char *key)
 {
+#ifdef USE_MEMCACHED
 
 	memcached_return rc;
 
@@ -1065,17 +1150,17 @@ static int delete_cache_on_memcached(const char *key)
 				(errmsg("failed to delete cache on memcached, error:\"%s\"", memcached_strerror(memc, rc))));
         return 0;
     }
-    return 1;
-
-}
 #endif
+    return 1;
+}
 
-#ifdef USE_MEMCACHED
 /*
  * Aquire lock on memcached by using memcached_add.
  */
 void lock_memcached(void)
 {
+#ifdef USE_MEMCACHED
+
 #define MEMCACHED_LOCK_EXPIRATION	10
 #define MY_LOCK_KEY	"pgpool_my_lock_key"
 #define MY_LOCK_KEY_SIZE	(sizeof(MY_LOCK_KEY)-1)
@@ -1092,6 +1177,7 @@ void lock_memcached(void)
 		usleep(MY_SLEEP_TIME);
 	}
 	while (rc != MEMCACHED_SUCCESS);
+#endif
 }
 
 /*
@@ -1099,7 +1185,7 @@ void lock_memcached(void)
  */
 void unlock_memcached(void)
 {
+#ifdef USE_MEMCACHED
 	memcached_delete(memc, MY_LOCK_KEY, MY_LOCK_KEY_SIZE, 0);
-}
-
 #endif
+}
