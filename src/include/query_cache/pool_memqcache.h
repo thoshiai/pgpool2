@@ -262,9 +262,6 @@ extern void pool_discard_temp_query_cache(POOL_TEMP_QUERY_CACHE *temp_cache);
 extern void pool_shmem_lock(void);
 extern void pool_shmem_unlock(void);
 extern int pool_delete_item_shmem_cache(POOL_CACHEID *cacheid);
-#ifdef USE_MEMCACHED
-extern int delete_cache_on_memcached(const char *key);
-#endif
 
 /* pool_oid_map.c */
 extern int pool_extract_table_oids(Node *node, int **oidsp);

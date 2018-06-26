@@ -517,34 +517,6 @@ static void send_message(POOL_CONNECTION *conn, char kind, int len, const char *
 	pool_write(conn, (void *)data, len-sizeof(len));
 }
 
-#ifdef USE_MEMCACHED
-/*
- * delete query cache on memcached
- */
-int delete_cache_on_memcached(const char *key)
-{
-
-	memcached_return rc;
-
-	ereport(DEBUG2,
-			(errmsg("memcache: deleteing cache on memcached with key: \"%s\"", key)));
-
-
-	/* delete cache data on memcached. key is md5 hash query */
-    rc= memcached_delete(memc, key, 32, (time_t)0);
-
-	/* delete cache data on memcached is failed */
-    if (rc != MEMCACHED_SUCCESS && rc != MEMCACHED_BUFFERED)
-    {
-		ereport(LOG,
-				(errmsg("failed to delete cache on memcached, error:\"%s\"", memcached_strerror(memc, rc))));
-        return 0;
-    }
-    return 1;
-
-}
-#endif
-
 /*
  * Fetch SELECT data from cache if possible.
  */
@@ -562,8 +534,15 @@ POOL_STATUS pool_fetch_from_memory_cache(POOL_CONNECTION *frontend,
 
 	*foundp = false;
     
-    POOL_SETMASK2(&BlockSig, &oldmask);
+	POOL_SETMASK2(&BlockSig, &oldmask);
 	pool_shmem_lock();
+
+#ifdef NOT_USED
+	if (!pool_is_shmem_cache())
+	{
+		lock_memcached();
+	}
+#endif
 
     PG_TRY();
     {
@@ -571,13 +550,25 @@ POOL_STATUS pool_fetch_from_memory_cache(POOL_CONNECTION *frontend,
     }
     PG_CATCH();
     {
-        pool_shmem_unlock();
-        POOL_SETMASK(&oldmask);
+#ifdef NOT_USED
+		if (!pool_is_shmem_cache())
+		{
+			unlock_memcached();
+		}
+#endif
+		POOL_SETMASK(&oldmask);
         PG_RE_THROW();
     }
     PG_END_TRY();
 
 	pool_shmem_unlock();
+
+#ifdef NOT_USED
+	if (!pool_is_shmem_cache())
+	{
+		unlock_memcached();
+	}
+#endif
 	POOL_SETMASK(&oldmask);
 
 	if (sts != 0)
@@ -936,7 +927,12 @@ void pool_handle_query_cache(POOL_CONNECTION_POOL *backend, char *query, Node *n
 				 */
 				/* Register to memcached or shmem */
 				POOL_SETMASK2(&BlockSig, &oldmask);
-				pool_shmem_lock();
+				pool_shmem_lock();				
+
+				if (!pool_is_shmem_cache())
+				{
+					lock_memcached();
+				}
 
 				cache_buffer =  pool_get_current_cache_buffer(&len);
 				if (cache_buffer)
@@ -971,6 +967,10 @@ void pool_handle_query_cache(POOL_CONNECTION_POOL *backend, char *query, Node *n
 					pfree(cache_buffer);
 				}
 				pool_shmem_unlock();
+				if (!pool_is_shmem_cache())
+				{
+					unlock_memcached();
+				}
 				POOL_SETMASK(&oldmask);
 			}
 
@@ -1038,6 +1038,11 @@ void pool_handle_query_cache(POOL_CONNECTION_POOL *backend, char *query, Node *n
 
 		POOL_SETMASK2(&BlockSig, &oldmask);
 		pool_shmem_lock();
+
+		if (!pool_is_shmem_cache())
+		{
+			lock_memcached();
+		}
 
 		/* Invalidate query cache */
 		if (pool_config->memqcache_auto_cache_invalidation)
@@ -1113,11 +1118,18 @@ void pool_handle_query_cache(POOL_CONNECTION_POOL *backend, char *query, Node *n
 			if (num_oids > 0 && pool_config->memqcache_auto_cache_invalidation)
 			{
 				pool_shmem_lock();
+				if (!pool_is_shmem_cache())
+				{
+					lock_memcached();
+				}
 				pool_invalidate_query_cache(num_oids, oids, true, dboid);
 				pool_discard_oid_maps_by_db(dboid);
 				pool_shmem_unlock();
+				if (!pool_is_shmem_cache())
+				{
+					unlock_memcached();
+				}
 				pool_reset_memqcache_buffer();
-
 				pfree(oids);
 				ereport(DEBUG2,
 					(errmsg("query cache handler for ReadyForQuery"),
@@ -1142,7 +1154,15 @@ void pool_handle_query_cache(POOL_CONNECTION_POOL *backend, char *query, Node *n
 				{
 					POOL_SETMASK2(&BlockSig, &oldmask);
 					pool_shmem_lock();
+					if (!pool_is_shmem_cache())
+					{
+						lock_memcached();
+					}
 					pool_invalidate_query_cache(num_oids, oids, true, 0);
+					if (!pool_is_shmem_cache())
+					{
+						unlock_memcached();
+					}
 					pool_shmem_unlock();
 					POOL_SETMASK(&oldmask);
 					pool_reset_memqcache_buffer();
