@@ -358,7 +358,8 @@ static int pool_get_dropdb_table_oids_memcached(int **oids, int dboid)
 	if (ptr == NULL && rc != MEMCACHED_NOTFOUND)
 	{
 		ereport(WARNING,
-				(errmsg("pool_get_dropdb_table_oids_memcached: memcached_get returned error %s", memcached_error(memc))));
+				(errmsg("pool_get_dropdb_table_oids_memcached: memcached_get returned error %s",
+						memcached_strerror(memc, rc))));
 		return 0;
 	}
 
@@ -711,7 +712,8 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 		if (ptr == NULL && rc != MEMCACHED_NOTFOUND)
 		{
 			ereport(WARNING,
-					(errmsg("pool_add_table_oid_map_memcached: memcached_get returned error %s", memcached_error(memc))));
+					(errmsg("pool_add_table_oid_map_memcached: memcached_get returned error %s",
+							memcached_strerror(memc, rc))));
 			return;
 		}
 
@@ -772,7 +774,8 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 			if (rc != MEMCACHED_SUCCESS)
 			{
 				ereport(WARNING,
-						(errmsg("pool_add_table_oid_map_memcached: memcached_set returned error %s", memcached_error(memc))));
+						(errmsg("pool_add_table_oid_map_memcached: memcached_set returned error %s",
+								memcached_strerror(memc, rc))));
 			}
 		}
 
@@ -788,7 +791,8 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 		if (ptr == NULL && rc != MEMCACHED_NOTFOUND)
 		{
 			ereport(WARNING,
-					(errmsg("pool_add_table_oid_map_memcached: memcached_get returned error %s", memcached_error(memc))));
+					(errmsg("pool_add_table_oid_map_memcached: memcached_get returned error %s",
+							memcached_strerror(memc, rc))));
 			return;
 		}
 
@@ -815,7 +819,8 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 		else
 		{
 			ereport(WARNING,
-					(errmsg("pool_add_table_oid_map_memcached: memcached_get returned error %s", memcached_error(memc))));
+					(errmsg("pool_add_table_oid_map_memcached: memcached_get returned error %s",
+							memcached_strerror(memc, rc))));
 			return;
 		}
 
@@ -826,7 +831,8 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 		if (rc != MEMCACHED_SUCCESS)
 		{
 			ereport(WARNING,
-					(errmsg("pool_add_table_oid_map_memcached: memcached_set returned error %s", memcached_error(memc))));
+					(errmsg("pool_add_table_oid_map_memcached: memcached_set returned error %s",
+							memcached_strerror(memc, rc))));
 		}
 
 	}
@@ -1097,7 +1103,8 @@ static void pool_invalidate_query_cache_memcached(int num_table_oids, int *table
 		if (ptr == NULL && rc != MEMCACHED_NOTFOUND)
 		{
 			ereport(WARNING,
-					(errmsg("pool_invalidate_query_cache_memcached: memcached_get returned error %s", memcached_error(memc))));
+					(errmsg("pool_invalidate_query_cache_memcached: memcached_get returned error %s",
+							memcached_strerror(memc, rc))));
 			return;
 		}
 		else if (rc == MEMCACHED_SUCCESS)
@@ -1118,7 +1125,8 @@ static void pool_invalidate_query_cache_memcached(int num_table_oids, int *table
 				if (rc != MEMCACHED_SUCCESS && rc != MEMCACHED_BUFFERED)
 				{
 					ereport(DEBUG5,
-							(errmsg("pool_invalidate_query_cache_memcached: error:\"%s\"", memcached_strerror(memc, rc))));
+							(errmsg("pool_invalidate_query_cache_memcached: error:\"%s\"",
+									memcached_strerror(memc, rc))));
 				}
 			}
 		}
@@ -1147,7 +1155,8 @@ static int delete_cache_on_memcached(const char *key)
     if (rc != MEMCACHED_SUCCESS && rc != MEMCACHED_BUFFERED)
     {
 		ereport(WARNING,
-				(errmsg("failed to delete cache on memcached, error:\"%s\"", memcached_strerror(memc, rc))));
+				(errmsg("failed to delete cache on memcached, error:\"%s\"",
+						memcached_strerror(memc, rc))));
         return 0;
     }
 #endif
@@ -1174,7 +1183,7 @@ void lock_memcached(void)
 	{
 		rc = memcached_set(memc, MY_LOCK_KEY, MY_LOCK_KEY_SIZE,
 						   MY_LOCK_DATA, MY_LOCK_DATA_LEN, (time_t)MEMCACHED_LOCK_EXPIRATION, 0);
-		usleep(MY_SLEEP_TIME);
+		usleep(1);
 	}
 	while (rc != MEMCACHED_SUCCESS);
 #endif
