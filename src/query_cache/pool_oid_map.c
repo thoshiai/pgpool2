@@ -664,6 +664,14 @@ static void pool_add_table_oid_map_shmem(POOL_CACHEKEY *cachekey, int num_table_
  * Also this function creates and maintains DB oid vs. table oids map.
  *
  * DB oid + table oid vs. query cache hash key format:
+ * There is a one key = DB oid + table oid data, data = counter, tuple for each DB oid/table oid pair.
+ * (db/table/hash counter)
+ * Everytime a query result cache is created, following data created.
+ * The format is key = DB oid + table oid + id, where id is a sequence number using (db/table/hash counter),
+ * data = query result cache hash.
+ *
+ * Belows are obsolted.
+ * DB oid + table oid vs. query cache hash key format:
  * Key format: "DB oid (decimal string)" + "/" + "table oid (decimal string)"
  *   example: 16393/16394
  * Data format: array of query cache hash key. Each hash is 32 bytes long string.
@@ -681,6 +689,9 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 /* size of database oid + "/" + table oid string buffer */
 #define POOL_DB_TABLE_OID_KEYLEN	64
 
+/* size of database oid + "/" + table oid + counter string buffer */
+#define POOL_DB_TABLE_OID_COUNTER_KEYLEN	64
+	
 	int db_oid;
 	char db_oid_str[32];
 	int db_oid_str_len;
@@ -693,8 +704,13 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 	int wlen = 0;
 	char buf[POOL_MD5_HASHKEYLEN+1];
 	char db_table_oid_key[POOL_DB_TABLE_OID_KEYLEN];
+	char db_table_oid_counter_key[POOL_DB_TABLE_OID_COUNTER_KEYLEN];
 	int db_table_oid_key_len;
+	int db_table_oid_counter_key_len;
 	bool found;
+	char counter[32];
+	int cntval;
+	char cntbuf[32];
 
 	db_oid = pool_get_database_oid();
 
@@ -729,6 +745,7 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 
 		else if (rc == MEMCACHED_SUCCESS)
 		{
+			/* found. append data */
 			char table_oid_str[POOL_TABLE_OID_STR_LEN+1];
 			char *p = ptr;
 			int ptr_len = len;
@@ -782,12 +799,19 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 		/* copy hash key to debug buffer */
 		StrNCpy(buf, (char *)&cachekey->hashkey, POOL_MD5_HASHKEYLEN+1);
 
-		/*
-		 * Try to extact table oid map using key (DB oid/table oid).
-		 */
-		snprintf(db_table_oid_key, POOL_DB_TABLE_OID_KEYLEN, "%d/%d", db_oid, table_oids[i]);
-		db_table_oid_key_len = strlen(db_table_oid_key);
-		ptr = memcached_get(memc, db_table_oid_key, db_table_oid_key_len, &len, &flags, &rc);
+		/* Create has key data */
+		data = palloc(POOL_MD5_HASHKEYLEN);
+		memcpy(data, &cachekey->hashkey, POOL_MD5_HASHKEYLEN);
+		wlen = POOL_MD5_HASHKEYLEN;
+		elog(DEBUG5, "pool_add_table_oid_map_memcached: creating new oid map. key: %s data: %s",
+			 db_table_oid_key, buf);
+
+		/* create db/table/counter data key */
+		snprintf(db_table_oid_counter_key, POOL_DB_TABLE_OID_COUNTER_KEYLEN, "%d/%d/counter", db_oid, table_oids[i]);
+		db_table_oid_counter_key_len = strlen(db_table_oid_counter_key);
+		
+		/* try to extract create db/table/counter data */
+		ptr = memcached_get(memc, db_table_oid_counter_key, db_table_oid_counter_key_len, &len, &flags, &rc);
 		if (ptr == NULL && rc != MEMCACHED_NOTFOUND)
 		{
 			ereport(WARNING,
@@ -798,23 +822,41 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 
 		if (rc == MEMCACHED_NOTFOUND)
 		{
-			/* The key does not exist yet. So create new oid map entry */
-			data = palloc(POOL_MD5_HASHKEYLEN);
-			memcpy(data, &cachekey->hashkey, POOL_MD5_HASHKEYLEN);
-			wlen = POOL_MD5_HASHKEYLEN;
-			elog(DEBUG5, "pool_add_table_oid_map_memcached: creating new oid map. key: %s data: %s",
-				 db_table_oid_key, buf);
+			/* initial value of the counter is 1 */
+			cntval = 1;
+			snprintf(counter, sizeof(counter), "%d", cntval);
+
+			rc = memcached_set(memc, db_table_oid_counter_key, db_table_oid_counter_key_len,
+							   counter, strlen(counter), 0, 0);
+
+			if (rc != MEMCACHED_SUCCESS)
+			{
+				ereport(WARNING,
+						(errmsg("pool_add_table_oid_map_memcached: memcached_set returned error %s",
+								memcached_strerror(memc, rc))));
+			}
+
 		}
 		else if (rc == MEMCACHED_SUCCESS)
 		{
-			/* append to tail of existing data */
-			data = palloc(len + POOL_MD5_HASHKEYLEN);
-			memcpy(data, ptr, len);
-			free(ptr);
-			memcpy(data + len, &cachekey->hashkey, POOL_MD5_HASHKEYLEN);
-			wlen = len + POOL_MD5_HASHKEYLEN;
-			elog(DEBUG5, "pool_add_table_oid_map_memcached: adding oid map. key: %s data: %s",
-				 db_table_oid_key, buf);
+			/* increment counter */
+			memcpy(cntbuf, ptr, len);
+			cntbuf[len] = '\0';
+			cntval = atoi(cntbuf);
+			cntval++;
+			snprintf(counter, sizeof(counter), "%d", cntval);
+
+			/* update counter */
+			rc = memcached_set(memc, db_table_oid_counter_key, db_table_oid_counter_key_len,
+							   counter, strlen(counter), 0, 0);
+
+			if (rc != MEMCACHED_SUCCESS)
+			{
+				ereport(WARNING,
+						(errmsg("pool_add_table_oid_map_memcached: memcached_set returned error %s",
+								memcached_strerror(memc, rc))));
+			}
+			
 		}
 		else
 		{
@@ -824,8 +866,16 @@ static void pool_add_table_oid_map_memcached(POOL_CACHEKEY *cachekey, int num_ta
 			return;
 		}
 
+		/*
+		 * Create key = db/table/counter, data = hash key
+		 */
+		snprintf(db_table_oid_key, POOL_DB_TABLE_OID_KEYLEN, "%d/%d/%d", db_oid, table_oids[i], cntval);
+		db_table_oid_key_len = strlen(db_table_oid_key);
 		rc = memcached_set(memc, db_table_oid_key, db_table_oid_key_len,
 						   data, wlen, 0, 0);
+		ereport(DEBUG5,
+				(errmsg("pool_add_table_oid_map_memcached: key: %s data: %s", db_table_oid_key, data)));
+
 		pfree(data);
 
 		if (rc != MEMCACHED_SUCCESS)
