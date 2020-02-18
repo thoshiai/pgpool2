@@ -631,6 +631,10 @@ parse_hba_line(TokenizedLine *tok_line, int elevel)
 	else if (strcmp(token->string, "pam") == 0)
 		parsedline->auth_method = uaPAM;
 #endif
+#ifdef USE_LDAP
+	else if (strcmp(token->string, "ldap") == 0)
+		parsedline->auth_method = uaLDAP;
+#endif
 	else
 	{
 		ereport(elevel,
@@ -679,6 +683,69 @@ parse_hba_line(TokenizedLine *tok_line, int elevel)
 				return NULL;
 			}
 			pfree(str);
+		}
+	}
+
+	/*
+	 * Check if the selected authentication method has any mandatory arguments
+	 * that are not set.
+	 */
+	if (parsedline->auth_method == uaLDAP)
+	{
+#ifndef HAVE_LDAP_INITIALIZE
+		/* Not mandatory for OpenLDAP, because it can use DNS SRV records */
+		MANDATORY_AUTH_ARG(parsedline->ldapserver, "ldapserver", "ldap");
+#endif
+
+		/*
+		 * LDAP can operate in two modes: either with a direct bind, using
+		 * ldapprefix and ldapsuffix, or using a search+bind, using
+		 * ldapbasedn, ldapbinddn, ldapbindpasswd and one of
+		 * ldapsearchattribute or ldapsearchfilter.  Disallow mixing these
+		 * parameters.
+		 */
+		if (parsedline->ldapprefix || parsedline->ldapsuffix)
+		{
+			if (parsedline->ldapbasedn ||
+				parsedline->ldapbinddn ||
+				parsedline->ldapbindpasswd ||
+				parsedline->ldapsearchattribute ||
+				parsedline->ldapsearchfilter)
+			{
+				ereport(elevel,
+						(errcode(ERRCODE_CONFIG_FILE_ERROR),
+						 errmsg("cannot use ldapbasedn, ldapbinddn, ldapbindpasswd, ldapsearchattribute, ldapsearchfilter, or ldapurl together with ldapprefix"),
+						 errcontext("line %d of configuration file \"%s\"",
+									line_num, HbaFileName)));
+				*err_msg = "cannot use ldapbasedn, ldapbinddn, ldapbindpasswd, ldapsearchattribute, ldapsearchfilter, or ldapurl together with ldapprefix";
+				return NULL;
+			}
+		}
+		else if (!parsedline->ldapbasedn)
+		{
+			ereport(elevel,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("authentication method \"ldap\" requires argument \"ldapbasedn\", \"ldapprefix\", or \"ldapsuffix\" to be set"),
+					 errcontext("line %d of configuration file \"%s\"",
+								line_num, HbaFileName)));
+			*err_msg = "authentication method \"ldap\" requires argument \"ldapbasedn\", \"ldapprefix\", or \"ldapsuffix\" to be set";
+			return NULL;
+		}
+
+		/*
+		 * When using search+bind, you can either use a simple attribute
+		 * (defaulting to "uid") or a fully custom search filter.  You can't
+		 * do both.
+		 */
+		if (parsedline->ldapsearchattribute && parsedline->ldapsearchfilter)
+		{
+			ereport(elevel,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("cannot use ldapsearchattribute together with ldapsearchfilter"),
+					 errcontext("line %d of configuration file \"%s\"",
+								line_num, HbaFileName)));
+			*err_msg = "cannot use ldapsearchattribute together with ldapsearchfilter";
+			return NULL;
 		}
 	}
 

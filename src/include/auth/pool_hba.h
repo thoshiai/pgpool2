@@ -46,6 +46,9 @@ typedef enum UserAuth
 #ifdef USE_PAM
 	,uaPAM
 #endif							/* USE_PAM */
+#ifdef USE_LDAP
+	,uaLDAP
+#endif							/* USE_LDAP */
 }
 UserAuth;
 
@@ -79,6 +82,19 @@ struct HbaLine
 	UserAuth	auth_method;
 	char	   *pamservice;
 	bool		pam_use_hostname;
+
+	bool		ldaptls;
+	char	   *ldapscheme;
+	char	   *ldapserver;
+	int			ldapport;
+	char	   *ldapbinddn;
+	char	   *ldapbindpasswd;
+	char	   *ldapsearchattribute;
+	char	   *ldapsearchfilter;
+	char	   *ldapbasedn;
+	int			ldapscope;
+	char	   *ldapprefix;
+	char	   *ldapsuffix;
 };
 
 extern bool load_hba(char *hbapath);
