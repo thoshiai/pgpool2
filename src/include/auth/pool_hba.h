@@ -29,6 +29,10 @@
 #include "parser/pg_list.h"
 #include "pool.h"
 
+#ifdef USE_LDAP
+#include  <ldap.h>
+#endif
+
 /* UserAuth type used for HBA which indicates the authentication method */
 typedef enum UserAuth
 {
