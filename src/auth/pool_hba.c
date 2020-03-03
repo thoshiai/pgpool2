@@ -1155,7 +1155,6 @@ ClientAuthentication(POOL_CONNECTION * frontend)
 
 #ifdef USE_LDAP
 			case uaLDAP:
-//				pam_frontend_kludge = frontend;
 				status = CheckLDAPAuth(frontend);
 				break;
 #endif							/* USE_LDAP */
@@ -1348,6 +1347,13 @@ auth_failed(POOL_CONNECTION * frontend)
 					 frontend->username);
 			break;
 #endif							/* USE_PAM */
+#ifdef USE_LDAP
+		case uaLDAP:
+			snprintf(errmessage, messagelen,
+					 "LDAP authentication with pgpool failed for user \"%s\"",
+					 frontend->username);
+			break;
+#endif							/* USE_LDAP */
 		default:
 			snprintf(errmessage, messagelen,
 					 "authentication with pgpool failed for user \"%s\": invalid authentication method",

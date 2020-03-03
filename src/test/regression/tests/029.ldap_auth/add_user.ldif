@@ -1,0 +1,12 @@
+dn: cn=ldap_user,dc=example,dc=com
+objectClass: posixAccount
+objectClass: inetOrgPerson
+sn: ldap_auth
+cn: ldap_user
+uid: 99998
+displayName: 101
+homeDirectory: /home/ldap_user
+loginShell: /bin/bash
+uidNumber: 99998
+gidNumber: 99998
+userPassword: {SSHA}GnaMm5qxWjf4qgzn6CD6Pllwj/pvudTy
