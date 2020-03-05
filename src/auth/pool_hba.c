@@ -47,6 +47,10 @@
 #include "parser/pg_list.h"
 #include "auth/pool_passwd.h"
 
+#ifdef USE_LDAP
+#include <ldap.h>
+#endif
+
 #define MULTI_VALUE_SEP "\001"	/* delimiter for multi-valued column strings */
 
 #define MAX_TOKEN	256
@@ -1008,6 +1012,14 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 		REQUIRE_AUTH_OPTION(uaLDAP, "ldapsuffix", "ldap");
 		hbaline->ldapsuffix = pstrdup(val);
 	}
+	else if (strcmp(name, "useldappassword") == 0)
+	{
+		REQUIRE_AUTH_OPTION(uaLDAP, "useldappassword", "ldap");
+		if (strcmp(val, "1") == 0)
+			hbaline->use_ldap_pass = true;
+		else
+			hbaline->use_ldap_pass = false;
+	}
 	else
 	{
 		ereport(elevel,
@@ -1346,7 +1358,7 @@ auth_failed(POOL_CONNECTION * frontend)
 					 "PAM authentication with pgpool failed for user \"%s\"",
 					 frontend->username);
 			break;
-#endif							/* USE_PAM */
+#endif							/* USE_LDAP */
 #ifdef USE_LDAP
 		case uaLDAP:
 			snprintf(errmessage, messagelen,
@@ -2366,7 +2378,6 @@ errdetail_for_ldap(LDAP *ldap)
 
 static int
 InitializeLDAPConnection(POOL_CONNECTION *frontend, LDAP **ldap)
-//InitializeLDAPConnection(Port *port, LDAP **ldap)
 {
 	const char *scheme;
 	int			ldapversion = LDAP_VERSION3;
@@ -2618,6 +2629,13 @@ static POOL_STATUS CheckLDAPAuth(POOL_CONNECTION * frontend)
 		/* Error message already sent */
 		pfree(passwd);
 		return -1;
+	}
+
+	if (frontend->pool_hba->use_ldap_pass)
+	{
+		frontend->pwd_size = strlen(passwd);
+		memcpy(frontend->password, passwd, frontend->pwd_size);
+		frontend->passwordType = PASSWORD_TYPE_PLAINTEXT;
 	}
 
 	if (frontend->pool_hba->ldapbasedn)

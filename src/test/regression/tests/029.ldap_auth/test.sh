@@ -31,10 +31,10 @@ echo "log_connections = on" >> etc/pgpool.conf
 #echo "local	all		all					ldap ldapserver=localhost ldapprefix=\"cn=\" ldapsuffix=\",dc=example,dc=com\"" >> etc/pool_hba.conf
 
 # simple bind
-echo "host	all		ldap_user	127.0.0.1/32	ldap ldapserver=localhost ldapprefix=\"cn=\" ldapsuffix=\",dc=example,dc=com\"" >> etc/pool_hba.conf
-echo "host	all		ldap_user	::1/128			ldap ldapserver=localhost ldapprefix=\"cn=\" ldapsuffix=\",dc=example,dc=com\"" >> etc/pool_hba.conf
+echo "host	all		ldap_user	127.0.0.1/32	ldap ldapserver=localhost ldapprefix=\"cn=\" ldapsuffix=\",dc=example,dc=com\" ldappassthroughauth=1" >> etc/pool_hba.conf
+echo "host	all		ldap_user	::1/128			ldap ldapserver=localhost ldapprefix=\"cn=\" ldapsuffix=\",dc=example,dc=com\" ldappassthroughauth=1" >> etc/pool_hba.conf
 # search and bind
-echo "local  all     ldap_user	ldap ldapserver=localhost ldapbinddn=\"cn=Manager,dc=example,dc=com\" ldapbindpasswd=\"password\" ldapbasedn=\"dc=example,dc=com\" ldapsearchfilter=\"(cn=\$username)\"" >> etc/pool_hba.conf
+echo "local  all     ldap_user	ldap ldapserver=localhost ldapbinddn=\"cn=Manager,dc=example,dc=com\" ldapbindpasswd=\"password\" ldapbasedn=\"dc=example,dc=com\" ldapsearchfilter=\"(cn=\$username)\" ldappassthroughauth=1" >> etc/pool_hba.conf
 
 
 sed -i "/.*trust$/d" etc/pool_hba.conf
@@ -45,7 +45,7 @@ sed -i "/replication/!s/^local.*trust$//g" data0/pg_hba.conf
 echo "local		all		ldap_user	scram-sha-256" >> data0/pg_hba.conf
 echo "local		all		all			trust" >> data0/pg_hba.conf
 
-echo "ldap_user:ldap_password" >> etc/pool_passwd
+#echo "ldap_user:ldap_password" >> etc/pool_passwd
 
 
 source ./bashrc.ports

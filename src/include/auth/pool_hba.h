@@ -99,6 +99,8 @@ struct HbaLine
 	int			ldapscope;
 	char	   *ldapprefix;
 	char	   *ldapsuffix;
+	/* Additional LDAPl option with pgpool */
+	bool		use_ldap_pass; /* If true, pgpool use same password to auth backend */
 };
 
 extern bool load_hba(char *hbapath);
