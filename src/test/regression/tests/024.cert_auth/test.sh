@@ -36,6 +36,10 @@ echo "ssl_key = '$SSL_KEY'" >> etc/pgpool.conf
 echo "ssl_cert = '$SSL_CRT'" >> etc/pgpool.conf
 echo "ssl_ca_cert = '$ROOT_CRT'" >> etc/pgpool.conf
 echo "enable_pool_hba = on" >> etc/pgpool.conf
+echo "listen_address = '*'"  >> etc/pgpool.conf
+
+#echo "ssl_prefer_server_ciphers = on" >> etc/pgpool.conf
+#echo "ssl_ciphers = 'EECDH:HIGH:MEDIUM:+3DES:!aNULL'" >> etc/pgpool.conf
 
 # allow to access IPv6 localhost
 echo "hostssl	all	    all		127.0.0.1/32          cert" >> etc/pool_hba.conf
