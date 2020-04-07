@@ -2730,6 +2730,8 @@ ProcessBackendResponse(POOL_CONNECTION * frontend,
 			(errmsg("processing backend response"),
 			 errdetail("received kind '%c'(%02x) from backend", kind, kind)));
 
+	ereport(LOG,
+			(errmsg("ProcessBackendResponse: kind:'%c'(%02x)", kind, kind)));
 
 	if (MAJOR(backend) == PROTO_MAJOR_V3)
 	{

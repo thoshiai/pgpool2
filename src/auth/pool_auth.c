@@ -2126,6 +2126,9 @@ pool_read_kind(POOL_CONNECTION_POOL * cp)
 
 		pool_read(CONNECTION(cp, i), &kind, sizeof(kind));
 
+		ereport(LOG,
+				(errmsg("pool_read_kind: kind: %c [node:%d] ", kind, i)));
+
 		if (IS_MASTER_NODE_ID(i))
 		{
 			kind0 = kind;
